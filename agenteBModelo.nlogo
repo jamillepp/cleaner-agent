@@ -1,27 +1,37 @@
-patches-own [clean]
-turtles-own [direction]
-globals [who-turtle px py side]
+globals [who-turtle x y side points current where-dirt non-visited destination result test1 test2 d1 d2 direction dirt-around]
 breed [dirt a-dirt]
 breed [cleaners cleaner]
+patches-own [clean visited]
+
+
 
 to setup
   clear-all
 
-  resize-world -4 4 -4 4
-  set-patch-size 50
+  ;; Globais
+  set points 0              ;; pontos
+  set where-dirt (list)         ;; memória do agente
+  set non-visited (list)
+  set current list 0 0      ;; posição atual (conhecimento do agente basedo em cálculo)
+  set destination list 0 0  ;; posição destino de sujeira da memória
+
+  ;; Visual do mundo
+  set-patch-size psize
+  resize-world (-1 * px) px (-1 * py) py
 
   ask patches
     [
       set pcolor 9.9
       set clean true
+      set visited false
 
-      if pycor mod 2 = 0       ;; patches on the right side
+      if pycor mod 2 = 0
         [
           ifelse pxcor mod 2 = 0
             [set pcolor black]
             [set pcolor brown]
         ]
-      if pycor mod 2 != 0       ;; patches on the right side
+      if pycor mod 2 != 0
         [
            ifelse pxcor mod 2 != 0
             [set pcolor black]
@@ -29,32 +39,34 @@ to setup
         ]
     ]
 
-  set who-turtle 0
-  create-dirt 9
+  ;; Criação das sujeiras
+  set who-turtle 0             ;; Define qual sujeira está sendo modificada
+  create-dirt how-many-turtles
 
-  repeat 9 [
+  repeat how-many-turtles [
 
-    set px (-4 + random 9)
-    set py (-4 + random 9)
+    set x (-4 + random 9)
+    set y (-4 + random 9)
 
-    while [any? dirt-on patch px py] [
-      set px (-4 + random 9)
-      set py (-4 + random 9)
+    while [any? dirt-on patch x y] [
+      set x (-4 + random 9)
+      set y (-4 + random 9)
     ]
 
-    ask patch px py [
+    ask patch x y [
       set clean false
     ]
 
     ask a-dirt who-turtle [
-      setxy px py
+      setxy x y
       set shape "dirt"
       set heading 0
     ]
     set who-turtle who-turtle + 1
   ]
 
-   create-cleaners 1
+  ;; Criação do aspirador
+  create-cleaners 1
 
   ask cleaners [
     setxy -4 + random 9 -4 + random 9
@@ -65,46 +77,185 @@ to setup
   reset-ticks
 end
 
-to go
 
+
+to go
   ask cleaners [
     look-around
     move
   ]
+
+  if count dirt = 0 [
+    stop
+  ]
+
   tick
 end
 
+
+
 to look-around
-  if any? dirt-on patch-here [
-    clean-up
+
+  set direction 0
+
+  ask patch-here [
+    set visited true
   ]
+
+  foreach non-visited [
+    ? ->
+    if ? = current [ set non-visited remove-item (position ? non-visited) non-visited ]
+  ]
+
+  if length non-visited > 0 [
+    set non-visited (sort-by smaller-distance non-visited)
+  ]
+
+  if any? dirt-on patch-here [
+
+    set points points + 1
+    clean-up
+
+    foreach where-dirt [
+      ? ->
+      if ? = current [ set where-dirt remove-item (position ? where-dirt) where-dirt ]
+    ]
+
+    if length where-dirt > 0 [
+      set where-dirt (sort-by smaller-distance where-dirt)
+    ]
+  ]
+
+  set dirt-around false
 
   repeat 4 [
-    if (patch-ahead 1 != nobody) and (any? dirt-on patch-ahead 1) [
+    if (patch-ahead 1 != nobody) [
+
+      if (any? dirt-on patch-ahead 1) [
+        set direction heading
+        set dirt-around true
+        set where-dirt lput ( upgrade-coo current ) where-dirt
+      ]
+      set result upgrade-coo current
+      ask patch-ahead 1 [
+        if visited = false [
+          set non-visited lput result non-visited
+        ]
+      ]
+    ]
+    rt 90
+  ]
+
+  ifelse dirt-around [
+    set heading direction
+    stop
+  ][
+
+    if length where-dirt > 0 [
+
+      set heading direction-by-memory "dirt"
       stop
     ]
-    rt 90
+    if length non-visited > 0 [
+
+      set heading direction-by-memory "visited"
+      stop
+    ]
   ]
 
+  while [patch-ahead 1 = nobody][
+    set side random 3
+    if side = 0 [
+      rt 90
+    ]
+    ifelse side = 1[
+      lt 90
+    ][lt 180]
+  ]
+
+  set where-dirt (sort-by smaller-distance where-dirt)
+  set non-visited (sort-by smaller-distance non-visited)
+
 end
+
+
 
 to clean-up
-    ask patch-here [
-      set clean true
-    ]
-    ask dirt-on patch-here [
-      die
-    ]
+
+  ask patch-here [
+    set clean true
+  ]
+  ask dirt-on patch-here [
+    die
+  ]
 end
 
+
+
 to move
+
   fd 1
-  set side random 2
-  ifelse side = 0 [
-    rt 90
-  ] [
-    lt 90
+  set current upgrade-coo current
+  set where-dirt (sort-by smaller-distance where-dirt)
+
+  if point-lose [
+    set points points - 1
   ]
+
+end
+
+
+
+to-report direction-by-memory [data]
+
+  if data = "dirt" [
+    set destination (item 0 where-dirt)
+  ]
+
+  if data = "visited" [
+    set destination (item 0 non-visited)
+  ]
+
+  if (item 0 current) = (item 0 destination) [
+    ifelse (item 1 destination) < (item 1 current) [ report 180 ] [report 0]
+  ]
+  if (item 1 current) = (item 1 destination) [
+    ifelse (item 0 destination) < (item 0 current) [ report 270 ] [report 90]
+  ]
+  if ((item 0 current) != (item 0 destination)) and ((item 1 current) != (item 1 destination)) [
+    ifelse abs((item 0 current) - (item 0 destination)) < abs((item 1 current) - (item 1 destination)) [
+      ifelse (item 0 destination) < (item 0 current) [ report 270 ] [report 90]
+    ][
+      ifelse (item 1 destination) < (item 1 current) [ report 180 ] [report 0]
+    ]
+  ]
+
+end
+
+
+
+to-report upgrade-coo [ origin ]
+
+  set result (list (item 0 origin) (item 1 origin))
+
+  if heading = 0 [ set result replace-item 1 result ((item 1 result) + 1) ]    ;;
+  if heading = 90 [ set result replace-item 0 result ((item 0 result) + 1) ]   ;;
+  if heading = 180 [ set result replace-item 1 result ((item 1 result) - 1) ]  ;;
+  if heading = 270 [ set result replace-item 0 result ((item 0 result) - 1) ]  ;;
+
+  report result
+
+end
+
+
+
+to-report smaller-distance [ coo1 coo2 ]
+
+  set d1 sqrt( ( ( ( item 0 coo1 ) - ( item 0 current ) )^ 2) + ( ( ( item 1 coo1 ) - ( item 1 current ) )^ 2) )
+  set d2 sqrt( ( ( ( item 0 coo2 ) - ( item 0 current ) )^ 2) + ( ( ( item 1 coo2 ) - ( item 1 current ) )^ 2) )
+
+  report d1 < d2
+
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
@@ -135,10 +286,10 @@ ticks
 30.0
 
 BUTTON
-127
-67
-200
-100
+125
+10
+205
+45
 NIL
 setup
 NIL
@@ -152,10 +303,10 @@ NIL
 1
 
 BUTTON
-135
-111
-198
-144
+125
+50
+205
+85
 NIL
 go
 T
@@ -167,6 +318,123 @@ NIL
 NIL
 NIL
 1
+
+INPUTBOX
+65
+10
+120
+85
+px
+4.0
+1
+0
+Number
+
+INPUTBOX
+5
+10
+60
+85
+py
+4.0
+1
+0
+Number
+
+INPUTBOX
+125
+90
+205
+150
+psize
+50.0
+1
+0
+Number
+
+MONITOR
+675
+165
+775
+210
+points
+points
+0
+1
+11
+
+SWITCH
+5
+155
+205
+188
+point-lose
+point-lose
+1
+1
+-1000
+
+PLOT
+675
+10
+875
+160
+points per ticks
+NIL
+NIL
+0.0
+10.0
+0.0
+10.0
+true
+false
+"" ""
+PENS
+"default" 1.0 0 -16777216 true "" "plot points"
+
+MONITOR
+781
+165
+876
+210
+current
+current
+0
+1
+11
+
+MONITOR
+675
+215
+875
+260
+NIL
+where-dirt
+0
+1
+11
+
+INPUTBOX
+5
+90
+120
+150
+how-many-turtles
+30.0
+1
+0
+Number
+
+MONITOR
+675
+265
+875
+310
+NIL
+non-visited
+17
+1
+11
 
 @#$#@#$#@
 ## WHAT IS IT?
@@ -551,5 +819,5 @@ true
 Line -7500403 true 150 150 90 180
 Line -7500403 true 150 150 210 180
 @#$#@#$#@
-0
+1
 @#$#@#$#@
