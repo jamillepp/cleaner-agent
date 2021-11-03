@@ -1,4 +1,4 @@
-globals [who-turtle x y side points current where-dirt non-visited destination result test1 test2 d1 d2 direction dirt-around]
+globals [who-turtle x y side points current where-dirt non-visited destination result test1 test2 d1 d2 direction dirt-around dirt-local-list cleaner-local-list]
 breed [dirt a-dirt]
 breed [cleaners cleaner]
 patches-own [clean visited]
@@ -10,9 +10,9 @@ to setup
 
   ;; Globais
   set points 0              ;; pontos
-  set where-dirt (list)         ;; memória do agente
-  set non-visited (list)
-  set current list 0 0      ;; posição atual (conhecimento do agente basedo em cálculo)
+  set where-dirt (list)     ;; memória do aspirador sobre localização de sujeiras não limpas
+  set non-visited (list)    ;; memória do aspirador sobre localização de espaços não visitados
+  set current list 0 0      ;; coordenada atual (conhecimento do agente basedo em cálculo)
   set destination list 0 0  ;; posição destino de sujeira da memória
 
   ;; Visual do mundo
@@ -41,37 +41,77 @@ to setup
 
   ;; Criação das sujeiras
   set who-turtle 0             ;; Define qual sujeira está sendo modificada
-  create-dirt how-many-turtles
 
-  repeat how-many-turtles [
+  ;; Define o local de cada sujeira a partir do input do usuário
+  ifelse length dirt-local > 0 [
 
-    set x (-4 + random 9)
-    set y (-4 + random 9)
+    set dirt-local-list read-from-string dirt-local
 
-    while [any? dirt-on patch x y] [
+    create-dirt length dirt-local-list
+
+    repeat length dirt-local-list [
+      set x item 0 (item who-turtle dirt-local-list)
+      set y item 1 (item who-turtle dirt-local-list)
+
+      ask patch x y [
+        set clean false
+      ]
+
+      ask a-dirt who-turtle [
+        setxy x y
+        set shape "dirt"
+        set heading 0
+      ]
+      set who-turtle who-turtle + 1
+    ]
+
+  ][;; Sem input do usuário, define o local das sujeiras aleatoriamente
+
+    create-dirt number-of-dirt
+
+    repeat number-of-dirt [
+
       set x (-4 + random 9)
       set y (-4 + random 9)
-    ]
 
-    ask patch x y [
-      set clean false
-    ]
+      while [any? dirt-on patch x y] [
+        set x (-4 + random 9)
+        set y (-4 + random 9)
+      ]
 
-    ask a-dirt who-turtle [
-      setxy x y
-      set shape "dirt"
-      set heading 0
+      ask patch x y [
+        set clean false
+      ]
+
+      ask a-dirt who-turtle [
+        setxy x y
+        set shape "dirt"
+        set heading 0
+      ]
+      set who-turtle who-turtle + 1
     ]
-    set who-turtle who-turtle + 1
   ]
 
   ;; Criação do aspirador
   create-cleaners 1
 
-  ask cleaners [
-    setxy -4 + random 9 -4 + random 9
-    set shape "aspirator"
-    set heading 0
+  ifelse length cleaner-local > 0 [
+
+    set cleaner-local-list read-from-string cleaner-local
+
+    ask cleaners [
+      setxy (item 0 cleaner-local-list) (item 1 cleaner-local-list)
+      set shape "aspirator"
+      set heading 0
+    ]
+
+  ][
+
+    ask cleaners [
+      setxy -4 + random 9 -4 + random 9
+      set shape "aspirator"
+      set heading 0
+    ]
   ]
 
   reset-ticks
@@ -102,12 +142,12 @@ to look-around
     set visited true
   ]
 
-  foreach non-visited [
+  foreach non-visited [ ;; Olhar se o espaço atual está na memória non-visited, caso sim, tirá-lo da memória
     ? ->
     if ? = current [ set non-visited remove-item (position ? non-visited) non-visited ]
   ]
 
-  if length non-visited > 0 [
+  if length non-visited > 0 [ ;; Reorganizar a memória non-visited pelo mais próximo primeiro
     set non-visited (sort-by smaller-distance non-visited)
   ]
 
@@ -116,30 +156,31 @@ to look-around
     set points points + 1
     clean-up
 
-    foreach where-dirt [
+    foreach where-dirt [  ;; Olhar se o espaço atual está na memória where-dirt, caso sim, tirá-lo da memória
       ? ->
       if ? = current [ set where-dirt remove-item (position ? where-dirt) where-dirt ]
     ]
 
-    if length where-dirt > 0 [
+    if length where-dirt > 0 [ ;; Reorganizar a memória where-dirt pelo mais próximo primeiro
       set where-dirt (sort-by smaller-distance where-dirt)
     ]
   ]
 
   set dirt-around false
 
-  repeat 4 [
+  repeat 4 [  ;; Verificar se em um dos 4 lados (cima, baixo, dir, esq) há sujeira
+
     if (patch-ahead 1 != nobody) [
 
       if (any? dirt-on patch-ahead 1) [
-        set direction heading
+        set direction heading ;; Define para qual lado ele deve ir em seguida
         set dirt-around true
-        set where-dirt lput ( upgrade-coo current ) where-dirt
+        set where-dirt lput ( upgrade-coo current ) where-dirt ;; Coloca local da sujeira na memória
       ]
       set result upgrade-coo current
       ask patch-ahead 1 [
         if visited = false [
-          set non-visited lput result non-visited
+          set non-visited lput result non-visited ;; Se houver algum local não visitado ao redor, coloca na memória
         ]
       ]
     ]
@@ -163,7 +204,7 @@ to look-around
     ]
   ]
 
-  while [patch-ahead 1 = nobody][
+  while [patch-ahead 1 = nobody][ ;; Caso não haja nada em nenhuma memória, o aspirador anda aleatoriamente
     set side random 3
     if side = 0 [
       rt 90
@@ -192,11 +233,13 @@ end
 
 
 
+;; Anda 1 para frente e reorganiza as memórias com base na nova coordenada
 to move
 
   fd 1
   set current upgrade-coo current
   set where-dirt (sort-by smaller-distance where-dirt)
+  set non-visited (sort-by smaller-distance non-visited)
 
   if point-lose [
     set points points - 1
@@ -206,8 +249,10 @@ end
 
 
 
+;; Calcula para que lado o aspirador vai com base no destino mais próximo
 to-report direction-by-memory [data]
 
+  ;; Qual memória usar
   if data = "dirt" [
     set destination (item 0 where-dirt)
   ]
@@ -216,16 +261,25 @@ to-report direction-by-memory [data]
     set destination (item 0 non-visited)
   ]
 
-  if (item 0 current) = (item 0 destination) [
+  if (item 0 current) = (item 0 destination) [ ;; se x current = x destination
+
     ifelse (item 1 destination) < (item 1 current) [ report 180 ] [report 0]
   ]
-  if (item 1 current) = (item 1 destination) [
+
+  if (item 1 current) = (item 1 destination) [ ;; se y current = y destination
+
     ifelse (item 0 destination) < (item 0 current) [ report 270 ] [report 90]
   ]
-  if ((item 0 current) != (item 0 destination)) and ((item 1 current) != (item 1 destination)) [
+
+  if ((item 0 current) != (item 0 destination)) and ((item 1 current) != (item 1 destination)) [ ;; se nenhum é igual
+
+    ;; Se a distância entre o x current e o x detination é menor que a distância entre o y current e o y detination
     ifelse abs((item 0 current) - (item 0 destination)) < abs((item 1 current) - (item 1 destination)) [
+
       ifelse (item 0 destination) < (item 0 current) [ report 270 ] [report 90]
-    ][
+
+    ][;; Se não:
+
       ifelse (item 1 destination) < (item 1 current) [ report 180 ] [report 0]
     ]
   ]
@@ -234,6 +288,7 @@ end
 
 
 
+;; Retorna uma nova coordenada com base na coordenada atual (global current)
 to-report upgrade-coo [ origin ]
 
   set result (list (item 0 origin) (item 1 origin))
@@ -249,6 +304,7 @@ end
 
 
 
+;; Sort-by a coordenada mas próxima á coordenada atual
 to-report smaller-distance [ coo1 coo2 ]
 
   set d1 sqrt( ( ( ( item 0 coo1 ) - ( item 0 current ) )^ 2) + ( ( ( item 1 coo1 ) - ( item 1 current ) )^ 2) )
@@ -365,9 +421,9 @@ points
 
 SWITCH
 5
-155
+285
 205
-188
+318
 point-lose
 point-lose
 1
@@ -419,8 +475,8 @@ INPUTBOX
 90
 120
 150
-how-many-turtles
-30.0
+number-of-dirt
+10.0
 1
 0
 Number
@@ -435,6 +491,38 @@ non-visited
 17
 1
 11
+
+INPUTBOX
+5
+155
+205
+215
+dirt-local
+[ [-2 4] [3 1] [0 -4] [ 1 2] [3 3] ]
+1
+0
+String
+
+INPUTBOX
+5
+220
+205
+280
+cleaner-local
+[0 0]
+1
+0
+String
+
+TEXTBOX
+10
+325
+205
+471
+If you give the dirt-local you dont need to give the number-of-dirt.\n\nNot giving the dirt-local or the cleaner-local will make them appear in random locals.
+12
+0.0
+1
 
 @#$#@#$#@
 ## WHAT IS IT?

@@ -1,14 +1,18 @@
-patches-own [clean]
+globals [who-turtle x y side points dirt-local-list cleaner-local-list]
 turtles-own [direction]
-globals [who-turtle x y side points]
+patches-own [clean]
 breed [dirt a-dirt]
 breed [cleaners cleaner]
 
 to setup
   clear-all
-  set points 0
-  resize-world (-1 * px) px (-1 * py) py
+
+  ;; Globais
+  set points 0  ;; pontos
+
+  ;; Visual do mundo
   set-patch-size psize
+  resize-world (-1 * px) px (-1 * py) py
 
   ask patches
     [
@@ -29,37 +33,81 @@ to setup
         ]
     ]
 
-  set who-turtle 0
-  create-dirt 30
+  ;; Criação das sujeiras
+  set who-turtle 0             ;; Define qual sujeira está sendo modificada
 
-  repeat 30 [
 
-    set x (-4 + random 9)
-    set y (-4 + random 9)
+  ;; Define o local de cada sujeira a partir do input do usuário
+  ifelse length dirt-localizations > 0 [
 
-    while [any? dirt-on patch x y] [
+    set dirt-local-list read-from-string dirt-localizations
+
+    create-dirt length dirt-local-list
+
+    repeat length dirt-local-list [
+      set x item 0 (item who-turtle dirt-local-list)
+      set y item 1 (item who-turtle dirt-local-list)
+
+      ask patch x y [
+        set clean false
+      ]
+
+      ask a-dirt who-turtle [
+        setxy x y
+        set shape "dirt"
+        set heading 0
+      ]
+      set who-turtle who-turtle + 1
+    ]
+
+  ][;; Sem input do usuário, define o local das sujeiras aleatoriamente
+
+    create-dirt number-of-dirt
+
+    repeat number-of-dirt [
+
       set x (-4 + random 9)
       set y (-4 + random 9)
-    ]
 
-    ask patch x y [
-      set clean false
-    ]
+      while [any? dirt-on patch x y] [
+        set x (-4 + random 9)
+        set y (-4 + random 9)
+      ]
 
-    ask a-dirt who-turtle [
-      setxy x y
-      set shape "dirt"
-      set heading 0
+      ask patch x y [
+        set clean false
+      ]
+
+      ask a-dirt who-turtle [
+        setxy x y
+        set shape "dirt"
+        set heading 0
+      ]
+      set who-turtle who-turtle + 1
     ]
-    set who-turtle who-turtle + 1
   ]
 
-   create-cleaners 1
 
-  ask cleaners [
-    setxy -4 + random 9 -4 + random 9
-    set shape "aspirator"
-    set heading 0
+  ;; Criação do aspirador
+  create-cleaners 1
+
+  ifelse length cleaner-local > 0 [
+
+    set cleaner-local-list read-from-string cleaner-local
+
+    ask cleaners [
+      setxy (item 0 cleaner-local-list) (item 1 cleaner-local-list)
+      set shape "aspirator"
+      set heading 0
+    ]
+
+  ][
+
+    ask cleaners [
+      setxy -4 + random 9 -4 + random 9
+      set shape "aspirator"
+      set heading 0
+    ]
   ]
 
   reset-ticks
@@ -85,7 +133,8 @@ to look-around
     clean-up
   ]
 
-  repeat 4 [
+  repeat 4 [  ;; Verificar se em um dos 4 lados (cima, baixo, dir, esq) há sujeira
+
     if (patch-ahead 1 != nobody) and (any? dirt-on patch-ahead 1) [
       stop
     ]
@@ -103,6 +152,9 @@ to clean-up
     ]
 end
 
+
+
+;; Anda 1 para frente
 to move
   fd 1
   if point-lose [
@@ -145,10 +197,10 @@ ticks
 30.0
 
 BUTTON
-134
+125
 10
-207
-43
+205
+45
 NIL
 setup
 NIL
@@ -162,10 +214,10 @@ NIL
 1
 
 BUTTON
-134
-46
-207
-79
+125
+50
+205
+85
 NIL
 go
 T
@@ -179,10 +231,10 @@ NIL
 1
 
 INPUTBOX
-5
-10
 65
-80
+10
+120
+85
 px
 4.0
 1
@@ -190,10 +242,10 @@ px
 Number
 
 INPUTBOX
-68
+5
 10
-129
-79
+60
+85
 py
 4.0
 1
@@ -201,10 +253,10 @@ py
 Number
 
 INPUTBOX
-6
-85
-129
-145
+125
+90
+205
+150
 psize
 50.0
 1
@@ -212,21 +264,21 @@ psize
 Number
 
 MONITOR
-135
-86
-207
-131
+675
+165
+875
+210
 points
 points
-17
+0
 1
 11
 
 SWITCH
-7
-151
-135
-184
+5
+285
+205
+318
 point-lose
 point-lose
 1
@@ -234,10 +286,10 @@ point-lose
 -1000
 
 PLOT
-7
-190
-207
-340
+675
+10
+875
+160
 points per ticks
 NIL
 NIL
@@ -250,6 +302,49 @@ false
 "" ""
 PENS
 "default" 1.0 0 -16777216 true "" "plot points"
+
+INPUTBOX
+5
+90
+120
+150
+number-of-dirt
+5.0
+1
+0
+Number
+
+INPUTBOX
+5
+155
+205
+215
+dirt-localizations
+[ [-2 4] [3 1] [0 -4] [ 1 2] [3 3] ]
+1
+0
+String
+
+INPUTBOX
+5
+220
+205
+280
+cleaner-local
+[0 0]
+1
+0
+String
+
+TEXTBOX
+10
+325
+205
+456
+If you give the dirt-local you dont need to give the number-of-dirt.\n\nNot giving the dirt-local or the cleaner-local will make them appear in random locals.
+12
+0.0
+1
 
 @#$#@#$#@
 ## WHAT IS IT?
@@ -634,5 +729,5 @@ true
 Line -7500403 true 150 150 90 180
 Line -7500403 true 150 150 210 180
 @#$#@#$#@
-0
+1
 @#$#@#$#@
